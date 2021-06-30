@@ -1,0 +1,2 @@
+#make sure that this file has execute permissions
+clang++ -mlinker-version=2.34 -g -O3 code-gen.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core`
