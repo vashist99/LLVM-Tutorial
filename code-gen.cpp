@@ -1,5 +1,15 @@
 #include<bits/stdc++.h>
 #include "my-lang-parser.hpp"
+//#include "/usr/include/KaleidoscopeJIT.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Pass.h"
+
+//using namespace llvm::orc;
 
 
 //===----------------------------------------------------------------------===//
@@ -12,11 +22,24 @@ static std::unique_ptr<llvm::Module> TheModule;
 static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::Value *> NamedValues;
 
+
 llvm::Value *LogErrorV(const char *Str) {
   LogError(Str);
   return nullptr;
 }
 
+
+//===----------------------------------------------------------------------===//
+// For Optimization Pass Manager method
+//===----------------------------------------------------------------------===//
+
+static std::unique_ptr<llvm::legacy::FunctionPassManager> TheFPM;
+//static std::unique_ptr<KaleidoscopeJIT> TheJIT;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static llvm::ExitOnError ExitOnErr;
+
+// --------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------
 
 llvm::Value *NumberExprAST::codegen() {
     return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
@@ -124,6 +147,9 @@ llvm::Function *FunctionAST::codegen(){
         //Validate the generated code, checking for consistency.
         llvm::verifyFunction(*TheFunction);
 
+        // Optimize the function.
+        TheFPM->run(*TheFunction);
+
         return TheFunction;
     }
 
@@ -137,13 +163,39 @@ llvm::Function *FunctionAST::codegen(){
 // Top-Level parsing and JIT Driver
 //===----------------------------------------------------------------------===//
 
-static void InitializeModule() {
+// static void InitializeModule() {
+//   // Open a new context and module.
+//   TheContext = std::make_unique<llvm::LLVMContext>();
+//   TheModule = std::make_unique<llvm::Module>("my cool jit", *TheContext);
+
+//   // Create a new builder for the module.
+//   Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+// }
+
+
+//Pass Manager for Optimization
+static void InitializeModuleAndPassManager() {
   // Open a new context and module.
   TheContext = std::make_unique<llvm::LLVMContext>();
   TheModule = std::make_unique<llvm::Module>("my cool jit", *TheContext);
+  //TheModule->setDataLayout(TheJIT->getDataLayout());
 
   // Create a new builder for the module.
   Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+
+  // Create a new pass manager attached to it.
+  TheFPM = std::make_unique<llvm::legacy::FunctionPassManager>(TheModule.get());
+
+  // Do simple "peephole" optimizations and bit-twiddling optzns.
+  TheFPM->add(llvm::createInstructionCombiningPass());
+  // Reassociate expressions.
+  TheFPM->add(llvm::createReassociatePass());
+  // Eliminate Common SubExpressions.
+  TheFPM->add(llvm::createGVNPass());
+  // Simplify the control flow graph (deleting unreachable blocks, etc).
+  TheFPM->add(llvm::createCFGSimplificationPass());
+
+  TheFPM->doInitialization();
 }
 
 static void HandleDefinition() {
@@ -214,10 +266,17 @@ static void MainLoop() {
 
 
 int main() {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    
+    
     fprintf(stderr, "ready>");
     getNextToken();
 
-    InitializeModule();
+    //InitializeModule();
+    InitializeModuleAndPassManager();
+
     //run the main "interpreter loop" now.
     MainLoop();
 

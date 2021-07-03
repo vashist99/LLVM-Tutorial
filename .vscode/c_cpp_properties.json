@@ -4,9 +4,9 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
+                "/usr/include/llvm/**",
                 "",
-                "",
-                "${workspaceFolder}/source/include"
+                ""
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
